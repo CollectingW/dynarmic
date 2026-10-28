@@ -23,6 +23,24 @@ namespace Dynarmic::FP {
 
 template<typename FPT>
 FPT FPRSqrtEstimate(FPT op, FPCR fpcr, FPSR& fpsr) {
+    if constexpr (sizeof(FPT) >= 4) {
+        // Positive normal inputs need no exception handling or mantissa normalization.
+        // Keep ARM's exact estimate table, not the host's approximate rsqrt instruction.
+        using Info = FPInfo<FPT>;
+        const FPT exponent_bits = op & Info::exponent_mask;
+        if ((op & Info::sign_mask) == 0 && exponent_bits != 0 &&
+            exponent_bits != Info::exponent_mask) {
+            const int exponent = int(exponent_bits >> Info::explicit_mantissa_width) -
+                                 Info::exponent_bias;
+            const unsigned precision = exponent % 2 == 0 ? 7 : 8;
+            const u64 scaled = ((op & Info::mantissa_mask) | Info::implicit_leading_bit) >>
+                               (Info::explicit_mantissa_width - precision);
+            const FPT estimate = Common::RecipSqrtEstimate(scaled);
+            const FPT result_exponent = ((-(exponent + 1)) >> 1) + Info::exponent_bias;
+            return (result_exponent << Info::explicit_mantissa_width) |
+                   ((estimate << (Info::explicit_mantissa_width - 8)) & Info::mantissa_mask);
+        }
+    }
     const auto [type, sign, value] = FPUnpack<FPT>(op, fpcr, fpsr);
 
     if (type == FPType::SNaN || type == FPType::QNaN) {

@@ -544,6 +544,19 @@ static void A64GetSetElimination(IR::Block& block) {
                 ir.SetInsertionPointBefore(&*get_inst);
                 get_inst->ReplaceUsesWith(ir.LeastSignificantWord(IR::U64{info.register_value}));
             }
+        } else if (!info.register_value.IsEmpty()
+            && tracking_type == TrackingType::X
+            && info.tracking_type == TrackingType::W
+            && info.set_instruction_present) {
+            // Writing Wn clears the upper half of Xn. Reuse that value rather
+            // than reloading Xn and discarding the tracked register state.
+            if (info.register_value.IsImmediate()) {
+                ReplaceUsesWith(*get_inst, false, u32(info.register_value.GetImmediateAsU64()));
+            } else {
+                A64::IREmitter ir{block};
+                ir.SetInsertionPointBefore(&*get_inst);
+                get_inst->ReplaceUsesWith(ir.ZeroExtendWordToLong(IR::U32{info.register_value}));
+            }
         } else {
             info = {};
             info.register_value = IR::Value(&*get_inst);
